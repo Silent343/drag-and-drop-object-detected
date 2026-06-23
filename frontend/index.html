@@ -1,0 +1,396 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>YOLO Object Detector</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet" />
+  <style>
+    /* ── Tokens ── */
+    :root {
+      --bg:        #0a0e14;
+      --surface:   #111820;
+      --surface-2: #1a2230;
+      --border:    rgba(255,255,255,0.07);
+      --accent:    #00e5ff;
+      --accent-dim:#004d60;
+      --green:     #00ff88;
+      --text:      #e2e8f0;
+      --muted:     #64748b;
+      --sans: 'Space Grotesk', system-ui, sans-serif;
+      --mono: 'Space Mono', monospace;
+    }
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body { height: 100%; background: var(--bg); color: var(--text); font-family: var(--sans); }
+
+    /* ── Layout ── */
+    .shell {
+      min-height: 100vh;
+      display: grid;
+      grid-template-rows: auto 1fr;
+    }
+
+    header {
+      padding: 1.25rem 2rem;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+    }
+    .logo {
+      width: 36px; height: 36px;
+      background: var(--accent);
+      border-radius: 8px;
+      display: grid; place-items: center;
+      font-size: 18px;
+    }
+    .header-title { font-size: 1rem; font-weight: 600; }
+    .header-sub { font-size: 0.75rem; color: var(--muted); margin-top: 1px; }
+    .badge {
+      margin-left: auto;
+      background: var(--accent-dim);
+      color: var(--accent);
+      border: 1px solid var(--accent);
+      border-radius: 20px;
+      padding: 3px 10px;
+      font-size: 0.7rem;
+      font-family: var(--mono);
+      font-weight: 700;
+      letter-spacing: 0.05em;
+    }
+
+    main {
+      display: grid;
+      grid-template-columns: 1fr 340px;
+      gap: 0;
+    }
+
+    /* ── Drop zone / image panel ── */
+    .image-panel {
+      border-right: 1px solid var(--border);
+      padding: 2rem;
+      display: flex;
+      flex-direction: column;
+      gap: 1.5rem;
+    }
+
+    .dropzone {
+      flex: 1;
+      min-height: 360px;
+      border: 1.5px dashed var(--border);
+      border-radius: 16px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 0.75rem;
+      cursor: pointer;
+      transition: border-color 0.2s, background 0.2s;
+      position: relative;
+      overflow: hidden;
+    }
+    .dropzone:hover, .dropzone.drag-over {
+      border-color: var(--accent);
+      background: rgba(0,229,255,0.03);
+    }
+    .dropzone input { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
+    .dz-icon { font-size: 2.5rem; line-height: 1; }
+    .dz-label { font-size: 0.9rem; font-weight: 500; }
+    .dz-hint { font-size: 0.75rem; color: var(--muted); }
+
+    .preview-wrap { position: relative; display: inline-block; width: 100%; }
+    .preview-img {
+      width: 100%;
+      border-radius: 12px;
+      display: block;
+      max-height: 65vh;
+      object-fit: contain;
+      background: var(--surface);
+    }
+
+    .btn-analyze {
+      width: 100%;
+      padding: 0.85rem;
+      background: var(--accent);
+      color: #000;
+      border: none;
+      border-radius: 10px;
+      font-size: 0.95rem;
+      font-weight: 700;
+      font-family: var(--sans);
+      cursor: pointer;
+      transition: opacity 0.15s;
+      letter-spacing: 0.02em;
+    }
+    .btn-analyze:hover:not(:disabled) { opacity: 0.85; }
+    .btn-analyze:disabled { opacity: 0.4; cursor: not-allowed; }
+
+    /* ── Results panel ── */
+    .results-panel {
+      padding: 1.75rem 1.5rem;
+      display: flex;
+      flex-direction: column;
+      gap: 1.25rem;
+      overflow-y: auto;
+    }
+
+    .panel-title {
+      font-size: 0.7rem;
+      text-transform: uppercase;
+      letter-spacing: 0.12em;
+      color: var(--muted);
+      font-family: var(--mono);
+    }
+
+    .stat-row {
+      display: flex;
+      gap: 0.75rem;
+    }
+    .stat {
+      flex: 1;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 0.75rem;
+    }
+    .stat-val {
+      font-size: 1.6rem;
+      font-weight: 700;
+      font-family: var(--mono);
+      color: var(--accent);
+      line-height: 1;
+    }
+    .stat-label { font-size: 0.72rem; color: var(--muted); margin-top: 3px; }
+
+    .detection-list { display: flex; flex-direction: column; gap: 0.6rem; }
+    .detection-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 0.75rem 0.9rem;
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      animation: slide-in 0.2s ease both;
+    }
+    @keyframes slide-in {
+      from { opacity: 0; transform: translateX(8px); }
+      to   { opacity: 1; transform: none; }
+    }
+    .det-dot {
+      width: 10px; height: 10px;
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
+    .det-name { font-weight: 600; font-size: 0.88rem; }
+    .det-en { font-size: 0.7rem; color: var(--muted); }
+    .det-conf {
+      margin-left: auto;
+      font-family: var(--mono);
+      font-size: 0.82rem;
+      color: var(--green);
+    }
+
+    /* Loading spinner */
+    .spinner {
+      width: 28px; height: 28px;
+      border: 3px solid var(--accent-dim);
+      border-top-color: var(--accent);
+      border-radius: 50%;
+      animation: spin 0.7s linear infinite;
+      margin: auto;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    .state-msg {
+      text-align: center;
+      padding: 2rem 0;
+      color: var(--muted);
+      font-size: 0.85rem;
+    }
+
+    .error-banner {
+      background: rgba(255,80,80,0.1);
+      border: 1px solid rgba(255,80,80,0.3);
+      color: #ff8080;
+      border-radius: 8px;
+      padding: 0.75rem 1rem;
+      font-size: 0.82rem;
+    }
+
+    /* ── Responsive ── */
+    @media (max-width: 720px) {
+      main { grid-template-columns: 1fr; }
+      .results-panel { border-top: 1px solid var(--border); }
+    }
+  </style>
+</head>
+<body>
+<div class="shell">
+  <header>
+    <div class="logo">🎯</div>
+    <div>
+      <div class="header-title">YOLO Object Detector</div>
+      <div class="header-sub">YOLOv8s · smart validation · per-class thresholds</div>
+    </div>
+    <span class="badge" id="api-status">API ···</span>
+  </header>
+
+  <main>
+    <!-- Left: image -->
+    <section class="image-panel">
+      <div class="dropzone" id="dropzone">
+        <input type="file" id="file-input" accept="image/*" />
+        <div class="dz-icon">📷</div>
+        <div class="dz-label">Arrastrá una imagen o hacé clic</div>
+        <div class="dz-hint">JPEG · PNG · WebP · hasta 10 MB</div>
+      </div>
+      <button class="btn-analyze" id="btn-analyze" disabled>Detectar objetos</button>
+    </section>
+
+    <!-- Right: results -->
+    <aside class="results-panel">
+      <div class="panel-title">Resultados</div>
+
+      <div class="stat-row">
+        <div class="stat">
+          <div class="stat-val" id="stat-total">—</div>
+          <div class="stat-label">objetos detectados</div>
+        </div>
+        <div class="stat">
+          <div class="stat-val" id="stat-res">—</div>
+          <div class="stat-label">resolución</div>
+        </div>
+      </div>
+
+      <div id="results-body">
+        <div class="state-msg">Subí una imagen para empezar</div>
+      </div>
+    </aside>
+  </main>
+</div>
+
+<script>
+  const API = '';  // same origin
+
+  const dropzone   = document.getElementById('dropzone');
+  const fileInput  = document.getElementById('file-input');
+  const btnAnalyze = document.getElementById('btn-analyze');
+  const statTotal  = document.getElementById('stat-total');
+  const statRes    = document.getElementById('stat-res');
+  const resultsBody= document.getElementById('results-body');
+  const apiStatus  = document.getElementById('api-status');
+
+  let selectedFile = null;
+
+  // ── Health check ──
+  (async () => {
+    try {
+      const r = await fetch(`${API}/health`);
+      const data = await r.json();
+      apiStatus.textContent = data.status === 'ok' ? '● Online' : '⚠ ' + data.status;
+      apiStatus.style.color = data.status === 'ok' ? '#00ff88' : '#ffaa00';
+    } catch {
+      apiStatus.textContent = '✕ Offline';
+      apiStatus.style.color = '#ff8080';
+    }
+  })();
+
+  // ── File selection ──
+  fileInput.addEventListener('change', e => {
+    const file = e.target.files?.[0];
+    if (file) selectFile(file);
+  });
+
+  dropzone.addEventListener('dragover', e => { e.preventDefault(); dropzone.classList.add('drag-over'); });
+  dropzone.addEventListener('dragleave', () => dropzone.classList.remove('drag-over'));
+  dropzone.addEventListener('drop', e => {
+    e.preventDefault();
+    dropzone.classList.remove('drag-over');
+    const file = e.dataTransfer.files?.[0];
+    if (file && file.type.startsWith('image/')) selectFile(file);
+  });
+
+  function selectFile(file) {
+    selectedFile = file;
+    btnAnalyze.disabled = false;
+
+    const reader = new FileReader();
+    reader.onload = ev => {
+      dropzone.innerHTML = `
+        <div class="preview-wrap">
+          <img class="preview-img" id="result-img" src="${ev.target.result}" alt="preview" />
+        </div>`;
+    };
+    reader.readAsDataURL(file);
+    setResults(null);
+  }
+
+  // ── Detection ──
+  btnAnalyze.addEventListener('click', runDetection);
+
+  async function runDetection() {
+    if (!selectedFile) return;
+
+    btnAnalyze.disabled = true;
+    resultsBody.innerHTML = `<div class="state-msg"><div class="spinner"></div><br>Analizando…</div>`;
+    statTotal.textContent = '—';
+    statRes.textContent = '—';
+
+    const form = new FormData();
+    form.append('file', selectedFile);
+
+    try {
+      const r = await fetch(`${API}/detect`, { method: 'POST', body: form });
+      if (!r.ok) {
+        const err = await r.json().catch(() => ({ detail: r.statusText }));
+        throw new Error(err.detail || 'Error desconocido');
+      }
+      const data = await r.json();
+      renderResults(data);
+    } catch (err) {
+      resultsBody.innerHTML = `<div class="error-banner">Error: ${err.message}</div>`;
+    } finally {
+      btnAnalyze.disabled = false;
+    }
+  }
+
+  function renderResults(data) {
+    statTotal.textContent = data.total;
+    statRes.textContent = `${data.image_width}×${data.image_height}`;
+
+    // Replace preview with annotated image
+    const imgEl = document.getElementById('result-img');
+    if (imgEl) imgEl.src = `data:image/jpeg;base64,${data.annotated_image_b64}`;
+
+    if (data.total === 0) {
+      resultsBody.innerHTML = `<div class="state-msg">No se detectaron objetos con suficiente confianza.</div>`;
+      return;
+    }
+
+    const cards = data.detections.map((det, i) => `
+      <div class="detection-card" style="animation-delay:${i * 0.05}s">
+        <div class="det-dot" style="background:${det.color_hex}"></div>
+        <div>
+          <div class="det-name">${det.class_name_es}</div>
+          <div class="det-en">${det.class_name_en}</div>
+        </div>
+        <div class="det-conf">${(det.confidence * 100).toFixed(1)}%</div>
+      </div>`).join('');
+
+    resultsBody.innerHTML = `
+      <div class="panel-title">Objetos detectados</div>
+      <div class="detection-list">${cards}</div>`;
+  }
+
+  function setResults(data) {
+    statTotal.textContent = '—';
+    statRes.textContent = '—';
+    resultsBody.innerHTML = `<div class="state-msg">Presioná "Detectar objetos" para analizar</div>`;
+  }
+</script>
+</body>
+</html>
